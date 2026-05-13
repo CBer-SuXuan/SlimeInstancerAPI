@@ -1,0 +1,9 @@
+name: SlimeArenaAPI
+version: '${version}'
+
+main: me.suxuan.slimearena.SlimeArenaPlugin
+description: 基于 AdvancedSlimePaper 的无状态小游戏世界生命周期管理 API
+api-version: '1.21'
+authors:
+  - SuXuan_Dev
+load: POSTWORLD
