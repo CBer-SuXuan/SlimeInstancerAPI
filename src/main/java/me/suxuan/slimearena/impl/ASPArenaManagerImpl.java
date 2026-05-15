@@ -44,7 +44,8 @@ public class ASPArenaManagerImpl implements ArenaManager {
 
 	@Override
 	public @NotNull CompletableFuture<World> createArenaAsync(@NotNull String templateName, @NotNull String instanceName) {
-		return CompletableFuture.supplyAsync(() -> {
+		CompletableFuture<World> future = new CompletableFuture<>();
+		Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
 			try {
 				SlimePropertyMap properties = new SlimePropertyMap();
 				properties.setValue(SlimeProperties.ALLOW_ANIMALS, false);
@@ -53,23 +54,35 @@ public class ASPArenaManagerImpl implements ArenaManager {
 
 				SlimeWorld templateWorld = slimeAPI.readWorld(fileLoader, templateName, true, properties);
 				SlimeWorld gameInstance = templateWorld.clone(instanceName);
-				slimeAPI.loadWorld(gameInstance, false);
 
-				World bukkitWorld = Bukkit.getWorld(instanceName);
-				if (bukkitWorld == null) {
-					throw new RuntimeException("Slime世界已生成，但无法在 Bukkit 中找到世界实例：" + instanceName);
-				}
+				Bukkit.getScheduler().runTask(plugin, () -> {
+					try {
+						slimeAPI.loadWorld(gameInstance, false);
 
-				activeArenas.add(instanceName);
-				plugin.log("<green>成功创建小游戏世界实例: <aqua>" + instanceName + "</aqua></green>");
-				return bukkitWorld;
+						World bukkitWorld = Bukkit.getWorld(instanceName);
+						if (bukkitWorld == null) {
+							throw new RuntimeException("Slime世界已生成，但无法在 Bukkit 中找到世界实例：" + instanceName);
+						}
+
+						activeArenas.add(instanceName);
+						plugin.log("<green>成功创建小游戏世界实例: <aqua>" + instanceName + "</aqua></green>");
+						future.complete(bukkitWorld);
+					} catch (Exception e) {
+						plugin.getLogger().severe("主线程生成世界失败: " + instanceName);
+						e.printStackTrace();
+						future.completeExceptionally(e);
+					}
+				});
 
 			} catch (Exception e) {
-				plugin.getLogger().severe("创建小游戏世界失败: " + instanceName);
+				// 捕获异步读取文件阶段的异常
+				plugin.getLogger().severe("异步读取模板失败: " + templateName);
 				e.printStackTrace();
-				throw new RuntimeException(e);
+				future.completeExceptionally(e);
 			}
 		});
+
+		return future;
 	}
 
 	@Override
@@ -83,7 +96,6 @@ public class ASPArenaManagerImpl implements ArenaManager {
 				for (Player player : world.getPlayers()) {
 					if (fallbackLocation != null) {
 						player.teleportAsync(fallbackLocation);
-						player.sendMessage(Component.text("§e小游戏已结束，你已被传送回大厅。")); // 这里可以换成 MiniMessage
 					} else {
 						player.kick(Component.text("§c游戏已结束，且未配置返回地点。"));
 					}
@@ -93,7 +105,7 @@ public class ASPArenaManagerImpl implements ArenaManager {
 				boolean unloaded = Bukkit.unloadWorld(world, false);
 
 				if (unloaded) {
-					plugin.log("<gray>小游戏世界 <aqua>" + worldName + "</aqua> 已成功销毁并从内存中清理。</gray>");
+					plugin.log("<gray>世界 <aqua>" + worldName + "</aqua> 已成功销毁并从内存中清理。</gray>");
 				} else {
 					plugin.log("<red>警告：无法卸载世界 <aqua>" + worldName + "</aqua>！可能有其他插件强行占用了区块。</red>");
 				}
@@ -103,7 +115,6 @@ public class ASPArenaManagerImpl implements ArenaManager {
 
 	@Override
 	public boolean isArenaWorld(@NotNull World world) {
-		// O(1) 复杂度的精准匹配
 		return activeArenas.contains(world.getName());
 	}
 
